@@ -2,15 +2,13 @@
 
 #
 # Assumes boto variables are set: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
-# Assumes env variables: ONMSUSER, ONMSPWD
 #
 
 from xml.etree import ElementTree as etree
 import boto.vpc,sys,boto,boto.ec2,socket
-import requests
+import requests  
 
-
-
+# Tested on Ubuntu 14.04 with boto==2.34.0, requests==2.2.1
 
 def clean_name(n):
   return (''.join(s for s in n if ( s.isalnum() or s == "_" or s == "-") )).upper()
