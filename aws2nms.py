@@ -9,11 +9,20 @@ from xml.etree import ElementTree as etree
 import boto.vpc,sys,boto,boto.ec2,socket
 import requests
 
+
+
+
+def clean_name(n):
+  return (''.join(s for s in n if ( s.isalnum() or s == "_" or s == "-") )).upper()
+
+
+############
 conn = boto.ec2.EC2Connection()
 regions = conn.get_all_regions()
 account_id =  conn.get_all_security_groups(groupnames='default')[0].owner_id
 
-password = raw_input("Enter OpenNMS Admin password for REST API>")
+#password = raw_input("Enter OpenNMS Admin password for REST API>").rstrip()
+password = "admin"
 
 for r in regions:
   c = boto.ec2.connect_to_region(r.name)
@@ -22,8 +31,6 @@ for r in regions:
   if len(sys.argv) == 1:
     print "Usage:\n\taws2nms.py [hosts|vpcs]"
     sys.exit(-1)
-
-
 
   if "hosts" in sys.argv or "all" in sys.argv:
     i_dict = {}
@@ -34,7 +41,7 @@ for r in regions:
         # Skip private addresses
         if i.ip_address:
           if i.tags.has_key("Name"):
-            identifier = i.tags["Name"]
+            identifier = clean_name(i.tags["Name"])
             i_dict[i.id] = identifier
           else:
             identifier = i.id
@@ -54,9 +61,7 @@ for r in regions:
       iface.set('ip-addr',h[2])
       node_string = etree.tostring(root)
       r = requests.post("http://127.0.0.1:8980/opennms/rest/requisitions/importboto/nodes",auth=("admin",password),data=node_string)
-
       print "Response:",r.status_code
-  
   
   if "vpcs" in sys.argv or "all" in sys.argv:
     for i in v.get_all_vpcs():
