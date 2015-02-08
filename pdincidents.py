@@ -1,13 +1,19 @@
 #!/usr/bin/env python
 
 # Assumes PAGERDUTYSITE PAGERDUTY are env variables to access your PagerDuty deployment
+# Requires Requests 2.2.x
+# 
 
 import string,os,requests,time,datetime,re,sys
 
-def parse_alert(service,raw):
+def parse_alert(service,raw,debug=False):
   """Extract host and alert type from raw alert"""
   host = "unknown"
   alert = "unknown"
+
+  if debug:
+    print "Processing alert from:", service
+    print raw
 
   if service == "Nagios":
     # LAZY!!!!
@@ -18,6 +24,18 @@ def parse_alert(service,raw):
         host = v
       elif k == "service_desc":
         alert = v
+  elif service == "Nagios PD API":
+    # LAZY!!!!
+    fields = raw.split(";")
+    for f in fields:
+      (k,v) = f.split("=")
+      if k == "host_name":
+        host = v
+      elif k == "service_desc":
+        alert = v
+
+
+
   elif service == "OpenNMS":
     down_re = m = re.match(r"OpenNMS\sAlert:\sNotice\s#.*:(.*)\son\s(.*)\s\(",raw)
     if down_re:
@@ -45,37 +63,43 @@ class IncidentGrabber():
     since = now - (60*60*24*days_back)
     start = datetime.datetime.fromtimestamp(since)
     since_str = "%d-%d-%d" % (start.year,start.month,start.day)
+    payload = {"offset": 0, "since": since_str, "limit": batch_size  }
 
-    payload = {"offset": 0,"limit": 10, "since": since_str  }
     first_request = requests.get(self.site + "/api/v1/incidents",headers=self.headers,params=payload)
-
     j = first_request.json()
+    total_incidents = j['total']
+
 
     if self.debug:
-      print "Sent:",first_request.request.headers,first_request.request.body
+      #print "Sent:",first_request.request.headers,first_request.request.body
       print "Incidents found in request:", j['total']
 
-    if j['total'] > batch_size:
-      if self.debug:
-        print "Greater than 100 incidents"
-
-      for i in j['incidents']:
-        service = i['service']
-        alert_tuple = parse_alert(service['name'],i['incident_key'])
-        self.incidents.append((i['incident_number'],service['name'],i['last_status_change_on'],alert_tuple[0],alert_tuple[1],i['incident_key']))
-
+    if total_incidents > batch_size:
       offset = batch_size
 
-      while offset < j['total']:
-        payload = {"offset": offset,"limit": batch_size, "since": since_str  }
-        r = requests.get(self.site + "/api/v1/incidents",headers=self.headers,params=payload)
-        for i in r.json()['incidents']:
-          service = i['service']
-          alert_tuple = parse_alert(service['name'],i['incident_key'])
-          self.incidents.append( (i['incident_number'],service['name'],i['last_status_change_on'],alert_tuple[0],alert_tuple[1],i['incident_key']))
-        offset += batch_size
-    else:
-      incidents = j['incidents']
+      if self.debug:
+        print "Greater than %s incidents" % batch_size
+
+    for i in j['incidents']:
+      service = i['service']
+      alert_tuple = parse_alert(service['name'],i['incident_key'],self.debug)
+      self.incidents.append((i['incident_number'],service['name'],i['last_status_change_on'],alert_tuple[0],alert_tuple[1],i['incident_key']))
+
+
+    while (total_incidents > batch_size) and (offset < j['total']):
+      payload = {"offset": offset,"limit": batch_size, "since": since_str  }
+      r = requests.get(self.site + "/api/v1/incidents",headers=self.headers,params=payload)
+
+      if self.debug:
+        print "Reading more incidents with offset",offset
+
+
+      for i in r.json()['incidents']:
+        service = i['service']
+        alert_tuple = parse_alert(service['name'],i['incident_key'],self.debug)
+        self.incidents.append( (i['incident_number'],service['name'],i['last_status_change_on'],alert_tuple[0],alert_tuple[1],i['incident_key']))
+
+      offset += batch_size
 
   def summarize_incidents(self):
     pass
